@@ -33,8 +33,8 @@ def run_full_process():
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
     
     all_data_frames = []
-    progress_bar = st.progress(0)
-    total_tasks = len(DISCIPLINER) * 2 # Groft estimat
+    progress_bar = st.progress(0, "Starter...")
+    total_tasks = sum(1 for _, _, scope in DISCIPLINER for g in ['women', 'men'] if scope == g or scope == 'both')
     completed_tasks = 0
 
     status_text = st.empty()
@@ -68,27 +68,36 @@ def run_full_process():
             except Exception as e:
                 st.warning(f"Kunne ikke hente data for {disciplin_slug} ({gender}). Fejl: {e}")
             
-            progress_bar.progress(completed_tasks / total_tasks)
+            progress_bar.progress(completed_tasks / total_tasks, f"Henter data... ({completed_tasks}/{total_tasks})")
 
     status_text.empty()
     progress_bar.empty()
 
     if not all_data_frames:
+        st.error("Ingen data blev fundet under skrabningen.")
         return None
 
     # DEL 2: ANALYSE
     combined_df = pd.concat(all_data_frames, ignore_index=True)
     
+    # NYT: Tilføjet debugging-output direkte i app'en
+    with st.expander("Debugging Info: Se fundne kolonnenavne"):
+        st.write("Her er en liste over alle kolonnenavne, som blev fundet i de indsamlede data:")
+        st.json(combined_df.columns.tolist())
+
     # Datarensning
     combined_df.columns = combined_df.columns.str.strip()
     
     # Find nationalitetskolonne (kan mangle overskrift)
+    nat_col = None
     if 'Nat' in combined_df.columns:
         nat_col = 'Nat'
     elif 'Unnamed: 7' in combined_df.columns: # Fallback til standardnavn
         nat_col = 'Unnamed: 7'
-    else:
-        st.error("Kunne ikke finde nationalitetskolonnen. Analysen kan ikke fortsætte.")
+    
+    if not nat_col:
+        st.error("Kritisk Fejl: Kunne ikke finde nationalitetskolonnen ('Nat' eller 'Unnamed: 7').")
+        st.info("Se listen af faktiske kolonnenavne i 'Debugging Info' ovenfor for at identificere problemet, og rapportér dem tilbage.")
         return None
 
     combined_df['Rank'] = pd.to_numeric(combined_df['Rank'], errors='coerce')
@@ -126,13 +135,11 @@ if 'result_df' not in st.session_state:
 
 # Knap til at starte/opdatere processen
 if st.button("Hent og analyser seneste data", type="primary"):
-    with st.spinner("Initialiserer..."):
-        result = run_full_process()
-        if result is not None:
-            st.session_state.result_df = result
-            st.success("Processen er fuldført!")
-        else:
-            st.error("Ingen data kunne hentes eller behandles. Prøv venligst igen senere.")
+    result = run_full_process()
+    if result is not None:
+        st.session_state.result_df = result
+        st.success("Processen er fuldført!")
+    # Fejlmeddelelser vises nu direkte fra run_full_process funktionen
 
 # Vis resultaterne, hvis de findes
 if st.session_state.result_df is not None:
