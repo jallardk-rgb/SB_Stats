@@ -8,9 +8,8 @@ import sys
 # --- App Konfiguration ---
 st.set_page_config(page_title="World Athletics Analyse", layout="wide")
 
-# --- KERNELOGIK: SKRABNING OG ANALYSE (pakket ind i funktioner) ---
+# --- KERNELOGIK ---
 
-# Liste over discipliner, der skal skrabes
 DISCIPLINER = [
     ('sprints', '100-metres', 'both'), ('sprints', '200-metres', 'both'), ('sprints', '400-metres', 'both'),
     ('middlelong', '800-metres', 'both'), ('middlelong', '1500-metres', 'both'), ('middlelong', '5000-metres', 'both'),
@@ -22,9 +21,9 @@ DISCIPLINER = [
     ('throws', 'shot-put', 'both'), ('throws', 'discus-throw', 'both'), ('throws', 'hammer-throw', 'both'), ('throws', 'javelin-throw', 'both'),
     ('combined-events', 'heptathlon', 'women'), ('combined-events', 'decathlon', 'men'),
 ]
-SEASON = 2025 # Sæsonen der skrabes for
+SEASON = 2025
 
-@st.cache_data(ttl=3600) # Gemmer data i 1 time for at undgå unødvendig skrabning
+@st.cache_data(ttl=3600)
 def run_full_process():
     """Kører hele processen med skrabning og analyse."""
     
@@ -36,17 +35,14 @@ def run_full_process():
     progress_bar = st.progress(0, "Starter...")
     total_tasks = sum(1 for _, _, scope in DISCIPLINER for g in ['women', 'men'] if scope == g or scope == 'both')
     completed_tasks = 0
-
     status_text = st.empty()
 
     for gender in ['women', 'men']:
         for kategori, disciplin_slug, gender_scope in DISCIPLINER:
             if gender_scope != 'both' and gender_scope != gender:
                 continue
-
             completed_tasks += 1
             status_text.info(f"Henter data for: {gender.upper()} - {disciplin_slug.replace('-', ' ').title()}")
-            
             try:
                 url = f"https://worldathletics.org/records/toplists/{kategori}/{disciplin_slug}/all/{gender}/senior/{SEASON}"
                 response = requests.get(url, headers=headers, verify=False, timeout=30)
@@ -59,7 +55,6 @@ def run_full_process():
                         for row in table.find('tbody').find_all('tr'):
                             cols = [col.text.strip() for col in row.find_all('td')]
                             rows.append(cols)
-                        
                         df_scraped = pd.DataFrame(rows, columns=table_headers)
                         if not df_scraped.empty:
                             df_scraped['Discipline'] = disciplin_slug
@@ -67,7 +62,6 @@ def run_full_process():
                             all_data_frames.append(df_scraped)
             except Exception as e:
                 st.warning(f"Kunne ikke hente data for {disciplin_slug} ({gender}). Fejl: {e}")
-            
             progress_bar.progress(completed_tasks / total_tasks, f"Henter data... ({completed_tasks}/{total_tasks})")
 
     status_text.empty()
@@ -80,22 +74,22 @@ def run_full_process():
     # DEL 2: ANALYSE
     combined_df = pd.concat(all_data_frames, ignore_index=True)
     
-    # Datarensning
-    combined_df.columns = combined_df.columns.str.strip()
-    
-    # ---- DENNE BLOK ER OPDATERET ----
-    nat_col = None
-    if 'Nat' in combined_df.columns:
+    # --- DEN ENDELIGE RETTELSE: Håndter duplikerede blanke kolonnenavne ---
+    # Vi finder den første kolonne med et blankt navn og omdøber den til 'Nat'.
+    cols = list(combined_df.columns)
+    try:
+        first_blank_index = cols.index('')
+        cols[first_blank_index] = 'Nat'
+        combined_df.columns = cols
         nat_col = 'Nat'
-    elif '' in combined_df.columns: # Tjekker for den BLANKE kolonne
-        nat_col = ''
-    elif 'Unnamed: 7' in combined_df.columns: # Fallback
-        nat_col = 'Unnamed: 7'
-    
-    if not nat_col and nat_col != '': # Tillad at nat_col er en tom streng
-        st.error("Kritisk Fejl: Kunne stadig ikke finde nationalitetskolonnen.")
-        return None
-    # ------------------------------------
+    except ValueError:
+        # Hvis der ingen blank kolonne er, så led efter 'Nat' som normalt
+        if 'Nat' in cols:
+            nat_col = 'Nat'
+        else:
+            st.error("Kritisk Fejl: Kunne slet ikke finde nationalitetskolonnen.")
+            return None
+    # -------------------------------------------------------------------------
 
     combined_df['Rank'] = pd.to_numeric(combined_df['Rank'], errors='coerce')
     combined_df.dropna(subset=['Rank', 'Competitor', 'DOB', nat_col], inplace=True)
@@ -130,22 +124,17 @@ st.write(f"Dette er en app til at hente og analysere de seneste top 100-lister f
 if 'result_df' not in st.session_state:
     st.session_state.result_df = None
 
-# Knap til at starte/opdatere processen
 if st.button("Hent og analyser seneste data", type="primary"):
     result = run_full_process()
     if result is not None:
         st.session_state.result_df = result
         st.success("Processen er fuldført!")
-    # Fejlmeddelelser vises nu direkte fra run_full_process funktionen
 
-# Vis resultaterne, hvis de findes
 if st.session_state.result_df is not None:
     st.header("Resultater")
     st.dataframe(st.session_state.result_df, use_container_width=True)
     
-    # Konverter DataFrame til CSV for download
     csv = st.session_state.result_df.to_csv(index=True).encode('utf-8')
-    
     st.download_button(
        label="Download resultat som CSV",
        data=csv,
