@@ -3,7 +3,6 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 import urllib3
-import sys
 
 # --- App Konfiguration ---
 st.set_page_config(page_title="World Athletics Analyse", layout="wide")
@@ -74,33 +73,26 @@ def run_full_process():
     # DEL 2: ANALYSE
     combined_df = pd.concat(all_data_frames, ignore_index=True)
     
-    # --- DEN ENDELIGE RETTELSE: Håndter duplikerede blanke kolonnenavne ---
-    # Vi finder den første kolonne med et blankt navn og omdøber den til 'Nat'.
-    cols = list(combined_df.columns)
-    try:
-        first_blank_index = cols.index('')
-        cols[first_blank_index] = 'Nat'
-        combined_df.columns = cols
-        nat_col = 'Nat'
-    except ValueError:
-        # Hvis der ingen blank kolonne er, så led efter 'Nat' som normalt
-        if 'Nat' in cols:
-            nat_col = 'Nat'
-        else:
-            st.error("Kritisk Fejl: Kunne slet ikke finde nationalitetskolonnen.")
-            return None
-    # -------------------------------------------------------------------------
+    # ---- NYT: Synkroniseret med Colab-logik ----
+    # 1. Omroker kolonner, præcis som i dit Colab-script
+    cols_to_move = ['Discipline', 'Gender']
+    combined_df = combined_df[cols_to_move + [col for col in combined_df.columns if col not in cols_to_move]]
+    
+    # 2. Sæt nationalitetskolonnen til det forventede navn efter omrokering
+    nationality_column_name = 'Unnamed: 7'
+    # --------------------------------------------
 
+    # Datarensning
     combined_df['Rank'] = pd.to_numeric(combined_df['Rank'], errors='coerce')
-    combined_df.dropna(subset=['Rank', 'Competitor', 'DOB', nat_col], inplace=True)
+    combined_df.dropna(subset=['Rank', 'Competitor', 'DOB', nationality_column_name], inplace=True)
     combined_df['Rank'] = combined_df['Rank'].astype(int)
 
     # Beregninger
     combined_df['Placement_Points'] = 101 - combined_df['Rank']
-    nation_points = combined_df.groupby(nat_col)['Placement_Points'].sum()
+    nation_points = combined_df.groupby(nationality_column_name)['Placement_Points'].sum()
     combined_df['Athlete_ID'] = combined_df['Competitor'].str.strip() + '*' + combined_df['DOB'].str.strip()
-    nation_unique_athletes = combined_df.groupby(nat_col)['Athlete_ID'].nunique()
-    nation_disciplines = combined_df.groupby(nat_col)['Discipline'].nunique()
+    nation_unique_athletes = combined_df.groupby(nationality_column_name)['Athlete_ID'].nunique()
+    nation_disciplines = combined_df.groupby(nationality_column_name)['Discipline'].nunique()
 
     # Samling af resultater
     summary_df = pd.DataFrame({
