@@ -80,25 +80,22 @@ def run_full_process():
     # DEL 2: ANALYSE
     combined_df = pd.concat(all_data_frames, ignore_index=True)
     
-    # NYT: Tilføjet debugging-output direkte i app'en
-    with st.expander("Debugging Info: Se fundne kolonnenavne"):
-        st.write("Her er en liste over alle kolonnenavne, som blev fundet i de indsamlede data:")
-        st.json(combined_df.columns.tolist())
-
     # Datarensning
     combined_df.columns = combined_df.columns.str.strip()
     
-    # Find nationalitetskolonne (kan mangle overskrift)
+    # ---- DENNE BLOK ER OPDATERET ----
     nat_col = None
     if 'Nat' in combined_df.columns:
         nat_col = 'Nat'
-    elif 'Unnamed: 7' in combined_df.columns: # Fallback til standardnavn
+    elif '' in combined_df.columns: # Tjekker for den BLANKE kolonne
+        nat_col = ''
+    elif 'Unnamed: 7' in combined_df.columns: # Fallback
         nat_col = 'Unnamed: 7'
     
-    if not nat_col:
-        st.error("Kritisk Fejl: Kunne ikke finde nationalitetskolonnen ('Nat' eller 'Unnamed: 7').")
-        st.info("Se listen af faktiske kolonnenavne i 'Debugging Info' ovenfor for at identificere problemet, og rapportér dem tilbage.")
+    if not nat_col and nat_col != '': # Tillad at nat_col er en tom streng
+        st.error("Kritisk Fejl: Kunne stadig ikke finde nationalitetskolonnen.")
         return None
+    # ------------------------------------
 
     combined_df['Rank'] = pd.to_numeric(combined_df['Rank'], errors='coerce')
     combined_df.dropna(subset=['Rank', 'Competitor', 'DOB', nat_col], inplace=True)
